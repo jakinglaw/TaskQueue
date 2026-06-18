@@ -38,6 +38,8 @@
   .seg button:not(.active):hover{background:#eef1ef;}
   select.sortsel{font:inherit;padding:6px 8px;border:1px solid var(--line-strong);border-radius:7px;background:#fff;}
   .stepper{display:inline-flex;align-items:center;border:1px solid var(--line-strong);border-radius:var(--radius);overflow:hidden;}
+  .countrow{display:flex;gap:8px;align-items:center;}
+  .stepper.off{opacity:.4;}
   .stepper button{border:0;background:#fff;width:30px;height:32px;font-size:16px;cursor:pointer;color:var(--ink-soft);}
   .stepper button:hover{background:#eef1ef;} .stepper button[disabled]{opacity:.4;cursor:not-allowed;}
   .stepper .n{min-width:30px;text-align:center;font-variant-numeric:tabular-nums;font-weight:600;}
@@ -111,7 +113,7 @@ const state = {
   catMulti: false, catTypeKnown: false, asgMulti: false, asgTypeKnown: false, priIsBool: false, priTypeKnown: false,
   typesChecked: false,
   // queue settings (persisted)
-  people: [], timing: "all", sort: "due", count: 5, randSeed: "seed1",
+  people: [], timing: "all", sort: "due", count: 5, limit: true, randSeed: "seed1",
   // transient editor state
   openStatusRow: null, openDateRow: null, editingDescRow: null, editingAsgRow: null, editingCatRow: null, editingPriRow: null,
   expandedRows: new Set(),
@@ -241,7 +243,7 @@ function setAssignees(id,arr){if(state.mapped.AssignedTo)writeField(id,state.col
 function setCategory(id,arr){if(state.mapped.Category)writeField(id,state.cols.Category,encodeMulti(arr,state.catMulti),"category");}
 function setPriority(id,arr){if(!state.mapped.Priority)return;let v=(arr&&arr.length)?arr[0]:null;if(v!==null&&v!==""&&!isNaN(Number(v)))v=Number(v);writeField(id,state.cols.Priority,v,"priority");}
 
-function persist(){if(!state.haveGrist)return;try{grist.setOptions({people:state.people,timing:state.timing,sort:state.sort,count:state.count,randSeed:state.randSeed});}catch(e){}}
+function persist(){if(!state.haveGrist)return;try{grist.setOptions({people:state.people,timing:state.timing,sort:state.sort,count:state.count,limit:state.limit,randSeed:state.randSeed});}catch(e){}}
 
 /* ===================== Queue logic ===================== */
 function isDoneOrCancelled(r){return isComplete(r)||isCancelled(r);}
@@ -282,10 +284,11 @@ function render(){
   root.appendChild(controls());
 
   const all=queueList();
-  const shown=all.slice(0,state.count);
+  const shown=state.limit?all.slice(0,state.count):all;
   const meta=el("div","meta");
   const who=state.people.length?state.people.join(", "):"everyone";
-  meta.textContent="Showing "+shown.length+" of "+all.length+" open deadline"+(all.length===1?"":"s")+" for "+who+(state.timing!=="all"?" \u00b7 "+state.timing:"");
+  const tail=" open deadline"+(all.length===1?"":"s")+" for "+who+(state.timing!=="all"?" \u00b7 "+state.timing:"");
+  meta.textContent=(state.limit?("Showing "+shown.length+" of "+all.length):("Showing all "+all.length))+tail;
   root.appendChild(meta);
 
   const q=el("div","queue");
@@ -331,13 +334,18 @@ function controls(){
     xf.appendChild(sh);row.appendChild(xf);
   }
 
-  // Count stepper
+  // Limit toggle + count stepper
   const cf=el("div","field");cf.appendChild(Object.assign(el("div","ctl-label"),{textContent:"How many"}));
-  const st=el("div","stepper");
-  const minus=el("button");minus.textContent="\u2212";minus.disabled=state.count<=1;minus.onclick=()=>{if(state.count>1){state.count--;persist();render();}};
+  const cfrow=el("div","countrow");
+  const tseg=el("div","seg");
+  [[true,"Top N"],[false,"All"]].forEach(o=>{const b=el("button",state.limit===o[0]?"active":"");b.textContent=o[1];b.onclick=()=>{state.limit=o[0];persist();render();};tseg.appendChild(b);});
+  cfrow.appendChild(tseg);
+  const st=el("div","stepper"+(state.limit?"":" off"));
+  const minus=el("button");minus.textContent="\u2212";minus.disabled=!state.limit||state.count<=1;minus.onclick=()=>{if(state.limit&&state.count>1){state.count--;persist();render();}};
   const nspan=el("span","n");nspan.textContent=state.count;
-  const plus=el("button");plus.textContent="+";plus.disabled=state.count>=10;plus.onclick=()=>{if(state.count<10){state.count++;persist();render();}};
-  st.append(minus,nspan,plus);cf.appendChild(st);row.appendChild(cf);
+  const plus=el("button");plus.textContent="+";plus.disabled=!state.limit||state.count>=10;plus.onclick=()=>{if(state.limit&&state.count<10){state.count++;persist();render();}};
+  st.append(minus,nspan,plus);cfrow.appendChild(st);
+  cf.appendChild(cfrow);row.appendChild(cf);
 
   c.appendChild(row);
   return c;
@@ -507,6 +515,7 @@ if(state.haveGrist){
     if(o.timing)state.timing=o.timing;
     if(o.sort)state.sort=o.sort;
     if(typeof o.count==="number")state.count=Math.max(1,Math.min(10,o.count));
+    if(typeof o.limit==="boolean")state.limit=o.limit;
     if(o.randSeed)state.randSeed=o.randSeed;
     render();
   });
